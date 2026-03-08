@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WAReach — WhatsApp DM Automation</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0f0a;
+    --surface: #111711;
+    --surface2: #161e16;
+    --border: #1e2e1e;
+    --green: #25D366;
+    --green2: #128C7E;
+    --green3: #075E54;
+    --accent: #00ff88;
+    --text: #e8f5e8;
+    --muted: #5a7a5a;
+    --danger: #ff4444;
+    --warn: #ffaa00;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 220px;
+    min-width: 220px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+  }
+  .logo {
+    padding: 24px 20px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: var(--green);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; margin-bottom: 10px;
+  }
+  .logo h1 { font-size: 18px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; }
+  .logo p { font-size: 11px; color: var(--muted); font-family: 'Space Mono', monospace; }
+
+  nav { padding: 12px 0; flex: 1; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 13px; font-weight: 500;
+    color: var(--muted);
+    transition: all .2s;
+    border-left: 2px solid transparent;
+  }
+  .nav-item:hover { color: var(--text); background: var(--surface2); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(0,255,136,.06); }
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+
+  .sidebar-stats {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .stat-row { display: flex; justify-content: space-between; padding: 3px 0; }
+  .stat-row span:last-child { color: var(--accent); }
+
+  /* MAIN */
+  .main { flex: 1; overflow-y: auto; }
+  .tab-content { display: none; padding: 28px; }
+  .tab-content.active { display: block; }
+
+  .page-header { margin-bottom: 24px; }
+  .page-header h2 { font-size: 22px; font-weight: 700; }
+  .page-header p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* CARDS */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .card-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: var(--green);
+  }
+  .stat-value { font-size: 28px; font-weight: 800; font-family: 'Space Mono', monospace; color: var(--accent); }
+  .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* FORM */
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+  input, select, textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: 'Outfit', sans-serif;
+    font-size: 13px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--green); }
+  textarea { resize: vertical; min-height: 90px; }
+  select option { background: var(--surface); }
+
+  /* BUTTONS */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 18px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-family: 'Outfit', sans-serif;
+    font-size: 13px; font-weight: 600;
+    transition: all .2s;
+  }
+  .btn-primary { background: var(--green); color: #000; }
+  .btn-primary:hover { background: var(--accent); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--green); color: var(--green); }
+  .btn-danger { background: rgba(255,68,68,.1); color: var(--danger); border: 1px solid rgba(255,68,68,.2); }
+  .btn-danger:hover { background: rgba(255,68,68,.2); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border); }
+  td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+
+  /* BADGE */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 600;
+  }
+  .badge-green { background: rgba(37,211,102,.1); color: var(--green); }
+  .badge-red { background: rgba(255,68,68,.1); color: var(--danger); }
+  .badge-yellow { background: rgba(255,170,0,.1); color: var(--warn); }
+  .badge-gray { background: rgba(100,100,100,.1); color: var(--muted); }
+  .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* LOG */
+  .log-box {
+    background: #060c06;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    height: 340px;
+    overflow-y: auto;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    line-height: 1.8;
+  }
+  .log-entry { display: flex; gap: 10px; }
+  .log-time { color: var(--muted); min-width: 70px; }
+  .log-ok { color: var(--green); }
+  .log-err { color: var(--danger); }
+  .log-info { color: #aaa; }
+  .log-warn { color: var(--warn); }
+
+  /* SCRIPT BOX */
+  .script-box {
+    background: #060c06;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    height: 380px;
+    overflow-y: auto;
+    white-space: pre;
+    color: #a0cca0;
+  }
+
+  /* PROGRESS */
+  .progress-bar { background: var(--border); border-radius: 4px; height: 6px; overflow: hidden; margin-top: 8px; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--green2), var(--green)); border-radius: 4px; transition: width .5s; }
+
+  /* FILE UPLOAD */
+  .file-drop {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 30px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .file-drop:hover, .file-drop.drag { border-color: var(--green); background: rgba(37,211,102,.04); }
+  .file-drop .file-icon { font-size: 32px; margin-bottom: 10px; }
+  .file-drop p { font-size: 13px; color: var(--muted); }
+  .file-drop span { color: var(--green); }
+
+  /* NUMBERS TABLE */
+  .numbers-preview {
+    max-height: 240px;
+    overflow-y: auto;
+    margin-top: 12px;
+  }
+
+  /* GRID */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+  /* FLOW STEPS */
+  .flow { display: flex; align-items: center; gap: 0; margin: 20px 0; }
+  .flow-step {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+    font-size: 12px;
+    position: relative;
+  }
+  .flow-step .step-num {
+    font-size: 20px; font-weight: 800; font-family: 'Space Mono', monospace;
+    color: var(--green); margin-bottom: 4px;
+  }
+  .flow-arrow { color: var(--green); font-size: 20px; padding: 0 6px; flex: none; }
+
+  /* TABS */
+  .inner-tabs { display: flex; gap: 4px; margin-bottom: 20px; }
+  .inner-tab {
+    padding: 8px 16px; border-radius: 6px; cursor: pointer;
+    font-size: 13px; font-weight: 500; color: var(--muted);
+    border: 1px solid transparent;
+    transition: all .2s;
+  }
+  .inner-tab.active { background: var(--surface2); border-color: var(--border); color: var(--text); }
+
+  /* TOOLTIPS/STATUS */
+  .status-msg { font-size: 12px; margin-top: 10px; padding: 8px 12px; border-radius: 6px; }
+  .status-ok { background: rgba(37,211,102,.1); color: var(--green); }
+  .status-err { background: rgba(255,68,68,.1); color: var(--danger); }
+
+  /* UptimeRobot Guide */
+  .guide-step {
+    display: flex; gap: 14px; margin-bottom: 16px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  .guide-num {
+    width: 28px; height: 28px; min-width: 28px;
+    background: var(--green); color: #000;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+  }
+  .guide-content h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .guide-content p { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  code { background: var(--bg); padding: 2px 6px; border-radius: 4px; font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="logo">
+    <div class="logo-icon">💬</div>
+    <h1>WAReach</h1>
+    <p>WhatsApp Automation</p>
+  </div>
+  <nav>
+    <div class="nav-item active" onclick="goTab('dashboard')"><span class="icon">📊</span> Dashboard</div>
+    <div class="nav-item" onclick="goTab('numbers')"><span class="icon">📋</span> Numbers / Excel</div>
+    <div class="nav-item" onclick="goTab('campaigns')"><span class="icon">🚀</span> Campaigns</div>
+    <div class="nav-item" onclick="goTab('script')"><span class="icon">📱</span> Connect WA</div>
+    <div class="nav-item" onclick="goTab('logs')"><span class="icon">📜</span> Live Logs</div>
+    <div class="nav-item" onclick="goTab('uptime')"><span class="icon">🔄</span> UptimeRobot</div>
+  </nav>
+  <div class="sidebar-stats">
+    <div class="stat-row"><span>Server</span><span id="ss-status">●  offline</span></div>
+    <div class="stat-row"><span>DMs Today</span><span id="ss-dms">0</span></div>
+    <div class="stat-row"><span>Numbers</span><span id="ss-numbers">0</span></div>
+    <div class="stat-row"><span>Success Rate</span><span id="ss-rate">—</span></div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- DASHBOARD TAB -->
+  <div id="tab-dashboard" class="tab-content active">
+    <div class="page-header">
+      <h2>Dashboard</h2>
+      <p>WhatsApp DM automation overview</p>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-sent">0</div>
+        <div class="stat-label">DMs Sent</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-failed">0</div>
+        <div class="stat-label">Failed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-pending">0</div>
+        <div class="stat-label">Pending</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">Total Numbers</div>
+      </div>
+    </div>
+
+    <!-- FLOW -->
+    <div class="card">
+      <div class="card-title">Automation Flow</div>
+      <div class="flow">
+        <div class="flow-step">
+          <div class="step-num">1</div>
+          Upload Excel<br><small style="color:var(--muted)">xlsx with numbers</small>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="step-num">2</div>
+          Set Message<br><small style="color:var(--muted)">text + variables</small>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="step-num">3</div>
+          Install Script<br><small style="color:var(--muted)">Tampermonkey</small>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="step-num">4</div>
+          Open WhatsApp<br><small style="color:var(--muted)">web.whatsapp.com</small>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step">
+          <div class="step-num">5</div>
+          Auto DM<br><small style="color:var(--muted)">human-like sending</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Recent Activity</div>
+      <div class="log-box" id="dash-log">
+        <div class="log-entry"><span class="log-time">—</span><span class="log-info">No activity yet. Start a campaign to see logs here.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NUMBERS TAB -->
+  <div id="tab-numbers" class="tab-content">
+    <div class="page-header">
+      <h2>Numbers / Excel Upload</h2>
+      <p>Upload your Excel file with phone numbers</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Upload Excel File</div>
+      <div class="file-drop" id="file-drop" onclick="document.getElementById('excel-input').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
+        <div class="file-icon">📊</div>
+        <p>Drop your <span>.xlsx / .xls / .csv</span> file here</p>
+        <p style="margin-top:6px">or click to browse</p>
+        <input type="file" id="excel-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFile(this.files[0])">
+      </div>
+
+      <div style="margin-top:14px" class="grid-2">
+        <div class="form-group">
+          <label>Phone Column Name</label>
+          <input type="text" id="phone-col" value="phone" placeholder="phone / number / mobile">
+        </div>
+        <div class="form-group">
+          <label>Name Column (optional)</label>
+          <input type="text" id="name-col" value="name" placeholder="name / contact">
+        </div>
+      </div>
+
+      <div id="file-status" style="display:none" class="status-msg status-ok"></div>
+
+      <div class="numbers-preview" id="numbers-preview" style="display:none">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Phone</th>
+              <th>Name</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="numbers-tbody"></tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:14px;display:flex;gap:10px">
+        <button class="btn btn-primary" onclick="saveNumbers()">💾 Save to Campaign</button>
+        <button class="btn btn-secondary" onclick="clearNumbers()">🗑 Clear</button>
+        <span id="num-count" style="align-self:center;font-size:12px;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Add Numbers Manually</div>
+      <div class="form-group">
+        <label>Phone Numbers (one per line, with country code)</label>
+        <textarea id="manual-numbers" placeholder="919876543210&#10;919123456789&#10;+91 98765 43210" style="height:120px"></textarea>
+      </div>
+      <button class="btn btn-secondary" onclick="addManualNumbers()">➕ Add Numbers</button>
+    </div>
+  </div>
+
+  <!-- CAMPAIGNS TAB -->
+  <div id="tab-campaigns" class="tab-content">
+    <div class="page-header">
+      <h2>Campaigns</h2>
+      <p>Create and manage your WhatsApp DM campaigns</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Create Campaign</div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Campaign Name</label>
+          <input type="text" id="camp-name" placeholder="Real Estate Outreach">
+        </div>
+        <div class="form-group">
+          <label>Daily Limit</label>
+          <input type="number" id="camp-limit" value="50" min="1" max="200">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Message Template</label>
+        <textarea id="camp-msg" placeholder="Hi {{name}},&#10;&#10;I'm reaching out about...&#10;&#10;Variables: {{name}}, {{phone}}"></textarea>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Delay Between DMs (seconds)</label>
+          <input type="number" id="camp-delay" value="15" min="5" max="120">
+        </div>
+        <div class="form-group">
+          <label>Break After Every N DMs</label>
+          <input type="number" id="camp-break-after" value="10" min="5" max="50">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Break Duration (seconds)</label>
+        <input type="number" id="camp-break-dur" value="120" min="30" max="600">
+      </div>
+
+      <button class="btn btn-primary" onclick="createCampaign()">🚀 Create Campaign</button>
+      <div id="camp-status" class="status-msg" style="display:none;margin-top:10px"></div>
+    </div>
+
+    <!-- Campaign List -->
+    <div class="card">
+      <div class="card-title">Your Campaigns</div>
+      <div id="camp-list">
+        <p style="color:var(--muted);font-size:13px">No campaigns yet.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCRIPT TAB -->
+  <div id="tab-script" class="tab-content">
+    <div class="page-header">
+      <h2>WhatsApp Connection</h2>
+      <p>Powered by Baileys — direct API, no browser needed</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Backend Server</div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Backend URL</label>
+          <input type="text" id="script-backend" value="http://localhost:3001" oninput="saveBackend()">
+        </div>
+        <div style="display:flex;align-items:flex-end;padding-bottom:14px;gap:8px">
+          <button class="btn btn-primary" onclick="checkConnection()">↻ Check Status</button>
+          <button class="btn btn-secondary" onclick="refreshQR()">📱 Get QR</button>
+        </div>
+      </div>
+      <div id="conn-status" class="status-msg status-info" style="display:block">Checking connection...</div>
+    </div>
+
+    <div class="card" id="qr-card" style="display:none">
+      <div class="card-title">📱 Scan to Connect</div>
+      <div style="text-align:center;padding:16px">
+        <canvas id="qr-canvas" style="border:4px solid white;border-radius:8px;max-width:220px"></canvas>
+        <div id="qr-text" style="font-size:11px;color:var(--muted);margin-top:8px;word-break:break-all;display:none"></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:10px">WhatsApp → Settings → Linked Devices → Link a Device</div>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="refreshQR()">↻ Refresh QR</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📦 Setup Guide</div>
+      <div class="guide-step"><div class="guide-num">1</div><div class="guide-content"><h4>Install Node.js 18+</h4><p>Download from <code>nodejs.org</code></p></div></div>
+      <div class="guide-step"><div class="guide-num">2</div><div class="guide-content"><h4>Install Bot</h4><p>Unzip <code>wareach-bot</code> folder → open terminal inside → run <code>npm install</code></p></div></div>
+      <div class="guide-step"><div class="guide-num">3</div><div class="guide-content"><h4>Start Bot</h4><p>Run <code>node bot.js</code> — QR appears here. Scan once with WhatsApp.</p></div></div>
+      <div class="guide-step"><div class="guide-num">4</div><div class="guide-content"><h4>Auto-reconnects</h4><p>Session saved in <code>./session</code> — next restart auto-connects, no QR needed.</p></div></div>
+      <div class="guide-step"><div class="guide-num">5</div><div class="guide-content"><h4>Run Campaigns</h4><p>Campaigns tab → ▶ Start — bot sends DMs directly, no browser needed.</p></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">⚡ Quick Actions</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="syncFromBackend()">↻ Sync Data</button>
+        <button class="btn btn-secondary" onclick="pushNumbersToBackend()">⬆ Push Numbers</button>
+        <button class="btn btn-secondary" onclick="pushCampaignsToBackend()">⬆ Push Campaigns</button>
+        <button class="btn btn-danger" onclick="resetAllSent()">🔄 Reset Sent</button>
+      </div>
+      <div id="sync-status" class="status-msg" style="display:none;margin-top:8px"></div>
+    </div>
+  </div>
+
+<!-- LOGS TAB -->
+  <div id="tab-logs" class="tab-content">
+    <div class="page-header">
+      <h2>Live Logs</h2>
+      <p>Real-time DM activity feed</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Activity Log</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="clearLogs()">🗑 Clear</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadLogs()">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="log-box" id="main-log" style="height:500px">
+        <div class="log-entry"><span class="log-time">—</span><span class="log-info">Waiting for activity...</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UPTIME TAB -->
+  <div id="tab-uptime" class="tab-content">
+    <div class="page-header">
+      <h2>UptimeRobot Setup</h2>
+      <p>Keep your automation running 24/7</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Setup Guide</div>
+      <div class="guide-step">
+        <div class="guide-num">1</div>
+        <div class="guide-content">
+          <h4>Deploy Backend to Railway/Render</h4>
+          <p>Push the <code>backend/</code> folder to GitHub, then connect it to Railway or Render. Get a public URL like <code>https://wareach.up.railway.app</code></p>
+        </div>
+      </div>
+      <div class="guide-step">
+        <div class="guide-num">2</div>
+        <div class="guide-content">
+          <h4>Register on UptimeRobot</h4>
+          <p>Create a free account at <code>uptimerobot.com</code>. Free plan supports 50 monitors with 5-minute checks.</p>
+        </div>
+      </div>
+      <div class="guide-step">
+        <div class="guide-num">3</div>
+        <div class="guide-content">
+          <h4>Add HTTP Monitor</h4>
+          <p>Click "Add New Monitor" → Type: HTTP(s) → URL: <code>https://your-backend.railway.app/ping</code> → Interval: 5 minutes → Save.</p>
+        </div>
+      </div>
+      <div class="guide-step">
+        <div class="guide-num">4</div>
+        <div class="guide-content">
+          <h4>Keep WhatsApp Web Open</h4>
+          <p>The Tampermonkey script runs in your browser. Keep a dedicated browser window open on <code>web.whatsapp.com</code> on a PC that stays on 24/7 or use a VPS with a remote browser like <code>Browserless</code>.</p>
+        </div>
+      </div>
+      <div class="guide-step">
+        <div class="guide-num">5</div>
+        <div class="guide-content">
+          <h4>Keepalive Pings</h4>
+          <p>The script sends a <code>GET /ping</code> request every 4 minutes to keep your Railway/Render free tier awake. UptimeRobot does the same from outside — double protection.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ═══════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════
+let numbers = JSON.parse(localStorage.getItem('wa_numbers') || '[]');
+let campaigns = JSON.parse(localStorage.getItem('wa_campaigns') || '[]');
+let logs = JSON.parse(localStorage.getItem('wa_logs') || '[]');
+
+// ═══════════════════════════════════════
+// NAV
+// ═══════════════════════════════════════
+function goTab(name) {
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'script') { populateScriptCamps(); generateScript(); }
+  if (name === 'logs') loadLogs();
+  updateSidebar();
+}
+
+// ═══════════════════════════════════════
+// EXCEL UPLOAD
+// ═══════════════════════════════════════
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('file-drop').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      let rows = [];
+      if (file.name.endsWith('.csv')) {
+        const text = e.target.result;
+        const lines = text.split('\n').filter(l => l.trim());
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g,''));
+        for (let i = 1; i < lines.length; i++) {
+          const vals = lines[i].split(',').map(v => v.trim().replace(/"/g,''));
+          const row = {};
+          headers.forEach((h, idx) => row[h] = vals[idx] || '');
+          rows.push(row);
+        }
+      } else {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      }
+      renderPreview(rows);
+    } catch(err) {
+      showStatus('file-status', 'Error reading file: ' + err.message, false);
+    }
+  };
+  if (file.name.endsWith('.csv')) reader.readAsText(file);
+  else reader.readAsArrayBuffer(file);
+}
+
+function renderPreview(rows) {
+  const phoneCol = document.getElementById('phone-col').value.toLowerCase();
+  const nameCol = document.getElementById('name-col').value.toLowerCase();
+
+  // Try to auto-detect phone column
+  const keys = rows[0] ? Object.keys(rows[0]).map(k => k.toLowerCase()) : [];
+  let pCol = keys.find(k => k === phoneCol) || keys.find(k => k.includes('phone') || k.includes('mobile') || k.includes('number')) || keys[0];
+  let nCol = keys.find(k => k === nameCol) || keys.find(k => k.includes('name')) || null;
+
+  // Get actual key from rows
+  const origKeys = rows[0] ? Object.keys(rows[0]) : [];
+  const pKey = origKeys.find(k => k.toLowerCase() === pCol) || origKeys[0];
+  const nKey = nCol ? origKeys.find(k => k.toLowerCase() === nCol) : null;
+
+  const parsed = rows.map(r => ({
+    phone: cleanPhone(String(r[pKey] || '')),
+    name: nKey ? String(r[nKey] || '') : ''
+  })).filter(r => r.phone.length >= 7);
+
+  // Store
+  window._previewNumbers = parsed;
+
+  // Show
+  const tbody = document.getElementById('numbers-tbody');
+  tbody.innerHTML = '';
+  parsed.slice(0, 50).forEach((r, i) => {
+    tbody.innerHTML += `<tr>
+      <td style="color:var(--muted)">${i+1}</td>
+      <td><code style="color:var(--accent)">${r.phone}</code></td>
+      <td>${r.name || '—'}</td>
+      <td><span class="badge badge-yellow">⏳ Pending</span></td>
+    </tr>`;
+  });
+  if (parsed.length > 50) {
+    tbody.innerHTML += `<tr><td colspan="4" style="color:var(--muted);text-align:center">... and ${parsed.length - 50} more</td></tr>`;
+  }
+
+  document.getElementById('numbers-preview').style.display = 'block';
+  document.getElementById('num-count').textContent = parsed.length + ' numbers found';
+  showStatus('file-status', `✓ Loaded ${parsed.length} valid phone numbers from file.`, true);
+}
+
+function cleanPhone(p) {
+  let clean = p.replace(/[\s\-\.\(\)\+]/g, '');
+  if (clean.startsWith('00')) clean = clean.slice(2);
+  if (!clean.match(/^\d{10,15}$/)) return clean;
+  return clean;
+}
+
+function saveNumbers() {
+  const preview = window._previewNumbers;
+  if (!preview || !preview.length) {
+    alert('No numbers to save. Upload a file first.');
+    return;
+  }
+  // Merge with existing, skip duplicates
+  const existing = new Set(numbers.map(n => n.phone));
+  let added = 0;
+  preview.forEach(n => {
+    if (!existing.has(n.phone)) {
+      numbers.push({ phone: n.phone, name: n.name, status: 'pending', addedAt: Date.now() });
+      existing.add(n.phone);
+      added++;
+    }
+  });
+  localStorage.setItem('wa_numbers', JSON.stringify(numbers));
+  showStatus('file-status', `✓ Saved ${added} new numbers. Total: ${numbers.length}`, true);
+  updateSidebar();
+}
+
+function clearNumbers() {
+  if (!confirm('Clear all numbers?')) return;
+  numbers = [];
+  localStorage.setItem('wa_numbers', JSON.stringify(numbers));
+  document.getElementById('numbers-preview').style.display = 'none';
+  document.getElementById('num-count').textContent = '';
+  window._previewNumbers = null;
+  updateSidebar();
+}
+
+function addManualNumbers() {
+  const text = document.getElementById('manual-numbers').value.trim();
+  if (!text) return;
+  const lines = text.split('\n').map(l => cleanPhone(l.trim())).filter(l => l.length >= 7);
+  const existing = new Set(numbers.map(n => n.phone));
+  let added = 0;
+  lines.forEach(phone => {
+    if (!existing.has(phone)) {
+      numbers.push({ phone, name: '', status: 'pending', addedAt: Date.now() });
+      existing.add(phone);
+      added++;
+    }
+  });
+  localStorage.setItem('wa_numbers', JSON.stringify(numbers));
+  document.getElementById('manual-numbers').value = '';
+  alert(`✓ Added ${added} numbers. Total: ${numbers.length}`);
+  updateSidebar();
+}
+
+// ═══════════════════════════════════════
+// CAMPAIGNS
+// ═══════════════════════════════════════
+function createCampaign() {
+  const name = document.getElementById('camp-name').value.trim();
+  const msg = document.getElementById('camp-msg').value.trim();
+  const limit = parseInt(document.getElementById('camp-limit').value);
+  const delay = parseInt(document.getElementById('camp-delay').value);
+  const breakAfter = parseInt(document.getElementById('camp-break-after').value);
+  const breakDur = parseInt(document.getElementById('camp-break-dur').value);
+
+  if (!name || !msg) { showStatus('camp-status', 'Campaign name and message are required.', false); return; }
+
+  const camp = {
+    id: 'c_' + Date.now(),
+    name, msg, limit, delay, breakAfter, breakDur,
+    status: 'idle',
+    sent: 0, failed: 0,
+    createdAt: Date.now()
+  };
+  campaigns.push(camp);
+  localStorage.setItem('wa_campaigns', JSON.stringify(campaigns));
+  renderCampaigns();
+  showStatus('camp-status', `✓ Campaign "${name}" created.`, true);
+  document.getElementById('camp-name').value = '';
+  document.getElementById('camp-msg').value = '';
+  populateScriptCamps();
+}
+
+function renderCampaigns() {
+  const el = document.getElementById('camp-list');
+  if (!campaigns.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">No campaigns yet.</p>'; return; }
+
+  el.innerHTML = campaigns.map(c => `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px;background:var(--surface2)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:15px;font-weight:600">${c.name}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:3px">${c.msg.slice(0,80)}${c.msg.length > 80 ? '...' : ''}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${c.status === 'running'
+            ? `<span class="badge badge-green"><span class="badge-dot"></span> Running</span><button class="btn btn-danger btn-sm" onclick="stopCampaignAPI('${c.id}')">⏸ Stop</button>`
+            : `<span class="badge badge-gray">Idle</span><button class="btn btn-primary btn-sm" onclick="startCampaignAPI('${c.id}')">▶ Start</button>`}
+          <button class="btn btn-danger btn-sm" onclick="deleteCampaign('${c.id}')">🗑</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:20px;margin-top:10px;font-size:12px;color:var(--muted)">
+        <span>✅ Sent: <b style="color:var(--green)">${c.sent}</b></span>
+        <span>❌ Failed: <b style="color:var(--danger)">${c.failed}</b></span>
+        <span>📋 Numbers: <b style="color:var(--text)">${numbers.filter(n => n.status === 'pending').length} pending</b></span>
+        <span>⏱ Delay: <b>${c.delay}s</b></span>
+        <span>📅 Limit: <b>${c.limit}/day</b></span>
+      </div>
+      <div class="progress-bar" style="margin-top:10px">
+        <div class="progress-fill" style="width:${Math.min(100,(c.sent/(c.sent+numbers.filter(n=>n.status==='pending').length||1)*100)).toFixed(1)}%"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function startCampaign(id) {
+  const camp = campaigns.find(c => c.id === id);
+  if (!camp) return;
+  if (!numbers.filter(n => n.status === 'pending').length) { alert('No pending numbers. Upload numbers first.'); return; }
+  camp.status = 'running';
+  localStorage.setItem('wa_campaigns', JSON.stringify(campaigns));
+  renderCampaigns();
+  addLog('info', `Campaign "${camp.name}" started`);
+}
+
+function stopCampaign(id) {
+  const camp = campaigns.find(c => c.id === id);
+  if (!camp) return;
+  camp.status = 'idle';
+  localStorage.setItem('wa_campaigns', JSON.stringify(campaigns));
+  renderCampaigns();
+  addLog('warn', `Campaign "${camp.name}" stopped`);
+}
+
+function deleteCampaign(id) {
+  if (!confirm('Delete this campaign?')) return;
+  campaigns = campaigns.filter(c => c.id !== id);
+  localStorage.setItem('wa_campaigns', JSON.stringify(campaigns));
+  renderCampaigns();
+  populateScriptCamps();
+}
+
+// ═══════════════════════════════════════
+// BACKEND API — replaces Tampermonkey script
+// ═══════════════════════════════════════
+function getBackend() {
+  return (document.getElementById('script-backend') || {}).value || 'http://localhost:3001';
+}
+function saveBackend() {
+  settings.backendUrl = getBackend();
+  save();
+}
+
+async function apiCall(method, path, body) {
+  const url = getBackend() + path;
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    return await res.json();
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function checkConnection() {
+  const el = document.getElementById('conn-status');
+  if (!el) return;
+  el.className = 'status-msg status-info';
+  el.style.display = 'block';
+  el.textContent = 'Checking connection...';
+  try {
+    const data = await fetch(getBackend() + '/status', { cache: 'no-store' }).then(r => r.json());
+    if (data.connected) {
+      el.className = 'status-msg status-ok';
+      el.textContent = `✓ Connected as: ${data.user?.name || data.user?.id || 'WhatsApp'}`;
+      const ss = document.getElementById('ss-status');
+      if (ss) { ss.textContent = '● online'; ss.style.color = 'var(--green)'; }
+      const qrCard = document.getElementById('qr-card');
+      if (qrCard) qrCard.style.display = 'none';
+    } else {
+      el.className = 'status-msg status-err';
+      el.textContent = '⚠ Bot running but WhatsApp disconnected — scan QR below';
+      refreshQR();
+    }
+  } catch(e) {
+    el.className = 'status-msg status-err';
+    el.textContent = '✗ Bot offline — run: node bot.js';
+    const ss = document.getElementById('ss-status');
+    if (ss) { ss.textContent = '● offline'; ss.style.color = 'var(--muted)'; }
+  }
+}
+
+async function refreshQR() {
+  const data = await apiCall('GET', '/qr');
+  const card = document.getElementById('qr-card');
+  if (!data.qr) {
+    if (data.msg) {
+      const el = document.getElementById('conn-status');
+      el.className = 'status-msg status-ok';
+      el.textContent = '✓ ' + data.msg;
+    }
+    return;
+  }
+  card.style.display = 'block';
+  // Display QR as text (simple, no external lib needed)
+  const txt = document.getElementById('qr-text');
+  txt.style.display = 'block';
+  txt.textContent = 'QR data received — check terminal for QR code, or use a QR generator with this data.';
+  // Try to show QR via canvas using a simple qr lib from CDN
+  try {
+    const canvas = document.getElementById('qr-canvas');
+    if (window.QRCode) {
+      QRCode.toCanvas(canvas, data.qr, { width: 220, margin: 2 }, () => {});
+    } else {
+      // Load qrcode.js dynamically
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+      script.onload = () => {
+        new QRCode(canvas, { text: data.qr, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.L });
+      };
+      document.head.appendChild(script);
+    }
+  } catch(e) {}
+}
+
+async function syncFromBackend() {
+  showStatus('sync-status', 'Syncing...', true);
+  const [camps, nums] = await Promise.all([
+    apiCall('GET', '/api/campaigns'),
+    apiCall('GET', '/api/numbers')
+  ]);
+  if (!camps.error && Array.isArray(camps)) {
+    campaigns = camps;
+  }
+  if (!nums.error && Array.isArray(nums)) {
+    numbers = nums;
+  }
+  save();
+  renderCampaigns();
+  renderNumbers();
+  updateSidebar();
+  showStatus('sync-status', '✓ Synced from bot', true);
+}
+
+async function pushNumbersToBackend() {
+  showStatus('sync-status', 'Pushing numbers...', true);
+  const data = await apiCall('POST', '/api/numbers', numbers);
+  if (data.error) { showStatus('sync-status', '✗ ' + data.error, false); return; }
+  showStatus('sync-status', `✓ Pushed ${numbers.length} numbers (${data.added} new)`, true);
+}
+
+async function pushCampaignsToBackend() {
+  showStatus('sync-status', 'Pushing campaigns...', true);
+  let ok = 0;
+  for (const camp of campaigns) {
+    const res = await apiCall('PUT', '/api/campaigns/' + camp.id, camp).catch(() => null)
+      || await apiCall('POST', '/api/campaigns', camp).catch(() => null);
+    if (res && !res.error) ok++;
+  }
+  showStatus('sync-status', `✓ Pushed ${ok} campaigns`, true);
+}
+
+async function resetAllSent() {
+  if (!confirm('Reset all numbers to pending?')) return;
+  await apiCall('POST', '/api/numbers/reset-status', {});
+  numbers.forEach(n => n.status = 'pending');
+  save();
+  renderNumbers();
+  updateSidebar();
+  showStatus('sync-status', '✓ All reset to pending', true);
+}
+
+// ── Override startCampaign/stopCampaign to call backend ──
+async function startCampaignAPI(id) {
+  const camp = campaigns.find(c => c.id === id);
+  if (!camp) return;
+  // First push latest data
+  await apiCall('PUT', '/api/campaigns/' + id, camp).catch(() => apiCall('POST', '/api/campaigns', camp));
+  await pushNumbersToBackend();
+  const res = await apiCall('POST', '/api/campaigns/' + id + '/start');
+  if (res.error) { alert('Error: ' + res.error); return; }
+  camp.status = 'running';
+  save();
+  renderCampaigns();
+  addLog('info', `Campaign "${camp.name}" started via bot`);
+}
+
+async function stopCampaignAPI(id) {
+  await apiCall('POST', '/api/campaigns/' + id + '/stop');
+  const camp = campaigns.find(c => c.id === id);
+  if (camp) { camp.status = 'idle'; save(); }
+  renderCampaigns();
+  addLog('warn', `Campaign "${camp?.name}" stopped`);
+}
+
+// Populate script camps (kept for compatibility — now just refreshes)
+function populateScriptCamps() {}
+
+// Poll backend for live stats and logs
+async function pollBackend() {
+  const backend = getBackend();
+  try {
+    const [statusRes, logsRes] = await Promise.all([
+      fetch(backend + '/ping').then(r => r.json()),
+      fetch(backend + '/api/logs?limit=50').then(r => r.json())
+    ]);
+    const el = document.getElementById('ss-status');
+    if (statusRes.connected) {
+      if (el) { el.textContent = '● online'; el.style.color = 'var(--green)'; }
+    } else {
+      if (el) { el.textContent = '● no WA'; el.style.color = 'var(--warn)'; }
+    }
+    // Merge backend logs into local
+    if (Array.isArray(logsRes) && logsRes.length) {
+      const existingTs = new Set(logs.map(l => l.ts + l.msg));
+      logsRes.forEach(l => {
+        if (!existingTs.has(l.ts + l.msg)) logs.unshift(l);
+      });
+      if (logs.length > 500) logs = logs.slice(0, 500);
+      updateDashLog();
+    }
+    // Sync campaign stats
+    campaigns.forEach(async c => {
+      try {
+        const stats = await fetch(backend + '/api/stats?campaignId=' + c.id).then(r => r.json());
+        if (stats.sent !== c.sent || stats.failed !== c.failed) {
+          c.sent = stats.sent;
+          c.failed = stats.failed;
+          save();
+          renderCampaigns();
+          updateSidebar();
+        }
+      } catch(e) {}
+    });
+  } catch(e) {
+    const el = document.getElementById('ss-status');
+    if (el) { el.textContent = '● offline'; el.style.color = 'var(--muted)'; }
+  }
+}

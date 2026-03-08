@@ -1,0 +1,23 @@
+{
+  "name": "wareach-bot",
+  "version": "4.0.0",
+  "description": "WAReach — WhatsApp DM Bot using Baileys (no browser)",
+  "main": "bot.js",
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js",
+    "qr": "node bot.js --qr"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "pino": "^8.16.0",
+    "qrcode-terminal": "^0.12.0",
+    "xlsx": "^0.18.5",
+    "groq-sdk": "^0.3.2",
+    "node-cron": "^3.0.3",
+    "axios": "^1.6.0"
+  }
+}

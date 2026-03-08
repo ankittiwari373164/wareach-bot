@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: wareach-bot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node bot.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+    disk:
+      name: wareach-data
+      mountPath: /data
+      sizeGB: 1
