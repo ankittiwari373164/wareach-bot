@@ -1,12 +1,11 @@
 {
   "name": "wareach-bot",
-  "version": "4.0.0",
-  "description": "WAReach — WhatsApp DM Bot using Baileys (no browser)",
+  "version": "6.0.0",
+  "description": "WAReach — WhatsApp DM Bot (Render Free + MongoDB Atlas)",
   "main": "bot.js",
   "type": "module",
   "scripts": {
-    "start": "node bot.js",
-    "qr": "node bot.js --qr"
+    "start": "node bot.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.9",
@@ -17,7 +16,7 @@
     "qrcode-terminal": "^0.12.0",
     "xlsx": "^0.18.5",
     "groq-sdk": "^0.3.2",
-    "node-cron": "^3.0.3",
+    "mongodb": "^6.3.0",
     "axios": "^1.6.0"
   }
 }
