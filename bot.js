@@ -1,6 +1,6 @@
 /**
- * WAReach Bot — bot.js v5.0
- * ─────────────────────────
+ * WAReach Bot — bot.js v5.1 (Render + UptimeRobot)
+ * ─────────────────────────────────────────────────
  * Anti-ban features:
  *  • Human-like random delays with Gaussian jitter
  *  • Typing presence simulation (composing → paused)
@@ -9,6 +9,11 @@
  *  • Image hash randomization (pixel-level noise injection)
  *  • Multi-account rotation (2-3 WA numbers)
  *  • Session warm-up (gradual ramp-up for new accounts)
+ *
+ * Render/UptimeRobot additions:
+ *  • Data & sessions stored on /data (Render persistent disk)
+ *  • GET /healthz endpoint for UptimeRobot ping (keeps free tier alive)
+ *  • Auto-detects Render environment (PORT env var)
  */
 
 import makeWASocket, {
@@ -30,38 +35,47 @@ import Groq from 'groq-sdk';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ─────────────────────────────────────────
+//  RENDER: Use /data for persistent storage
+//  Locally: use ./data
+// ─────────────────────────────────────────
+const IS_RENDER = !!process.env.RENDER;
+const BASE_DIR = IS_RENDER ? '/data' : path.join(__dirname, 'data');
+const SESSION_BASE = IS_RENDER ? '/data' : __dirname;
+
+// ─────────────────────────────────────────
 //  CONFIG
 // ─────────────────────────────────────────
 const CONFIG = {
   PORT: process.env.PORT || 3001,
-  DATA_DIR: './data',
-  CAMPAIGNS_FILE: './data/campaigns.json',
-  NUMBERS_FILE: './data/numbers.json',
-  LOGS_FILE: './data/logs.json',
-  STATS_FILE: './data/stats.json',
-  // Anti-ban: min/max delay between DMs in ms
-  MIN_DELAY: 18000,
-  MAX_DELAY: 45000,
-  // Anti-ban: typing simulation
+  DATA_DIR: BASE_DIR,
+  CAMPAIGNS_FILE: path.join(BASE_DIR, 'campaigns.json'),
+  NUMBERS_FILE:   path.join(BASE_DIR, 'numbers.json'),
+  LOGS_FILE:      path.join(BASE_DIR, 'logs.json'),
+  STATS_FILE:     path.join(BASE_DIR, 'stats.json'),
+  MIN_DELAY:  18000,
+  MAX_DELAY:  45000,
   MIN_TYPING: 1500,
   MAX_TYPING: 5000,
-  // Anti-ban: session warm-up (account age < 7 days → stricter limits)
   WARMUP_DAILY_LIMIT: 15,
   NORMAL_DAILY_LIMIT: 50,
 };
 
+// Ensure dirs exist
 [CONFIG.DATA_DIR].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
+
+if (IS_RENDER) {
+  console.log(`[WAReach] Running on Render — data dir: ${BASE_DIR}`);
+}
 
 // ─────────────────────────────────────────
 //  STATE
 // ─────────────────────────────────────────
-// Multi-account: Map of accountId → { sock, isConnected, qr, user, sessionDir }
 const accounts = new Map();
 let campaigns = load(CONFIG.CAMPAIGNS_FILE, []);
-let numbers = load(CONFIG.NUMBERS_FILE, []);
-let logs = load(CONFIG.LOGS_FILE, []);
-let stats = load(CONFIG.STATS_FILE, {});
-const activeCampaigns = new Map(); // campaignId → { running, sentToday, dmCount, accountId }
+let numbers   = load(CONFIG.NUMBERS_FILE, []);
+let logs      = load(CONFIG.LOGS_FILE, []);
+let stats     = load(CONFIG.STATS_FILE, {});
+const activeCampaigns = new Map();
 
 // ─────────────────────────────────────────
 //  HELPERS
@@ -89,20 +103,16 @@ function addLog(level, msg, campaignId = null) {
 //  ANTI-BAN: Human-like random delay
 // ─────────────────────────────────────────
 function humanDelay(base, spread) {
-  // Gaussian-ish: average of 3 random numbers avoids perfectly uniform distribution
   const g = (Math.random() + Math.random() + Math.random()) / 3;
   return Math.round(base + (g - 0.5) * 2 * spread);
 }
 
 // ─────────────────────────────────────────
 //  ANTI-BAN: Inject invisible pixel noise into image buffer
-//  Ensures every sent image has a unique hash — bypasses media fingerprinting
 // ─────────────────────────────────────────
 function randomizeImageBuffer(buffer) {
   try {
     const buf = Buffer.from(buffer);
-    // Flip 3 random bytes in the last 512 bytes (beyond useful image data)
-    // This changes the file hash without affecting how the image looks
     for (let i = 0; i < 3; i++) {
       const pos = buf.length - Math.floor(Math.random() * 512) - 1;
       if (pos > 100) buf[pos] = Math.floor(Math.random() * 256);
@@ -112,7 +122,7 @@ function randomizeImageBuffer(buffer) {
 }
 
 // ─────────────────────────────────────────
-//  GROQ AI REWRITE — every single message
+//  GROQ AI REWRITE
 // ─────────────────────────────────────────
 async function rewriteMessage(text, groqKey, recipientName) {
   if (!groqKey) return text;
@@ -150,10 +160,11 @@ Rules:
 //  MULTI-ACCOUNT: Connect one WhatsApp account
 // ─────────────────────────────────────────
 async function connectAccount(accountId) {
-  const sessionDir = `./session_${accountId}`;
+  // Sessions stored on persistent disk
+  const sessionDir = path.join(SESSION_BASE, `session_${accountId}`);
   if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
 
-  addLog('info', `Account ${accountId}: connecting...`);
+  addLog('info', `Account ${accountId}: connecting... (session: ${sessionDir})`);
 
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
   const { version } = await fetchLatestBaileysVersion();
@@ -170,7 +181,6 @@ async function connectAccount(accountId) {
     syncFullHistory: false,
   });
 
-  // Store account state
   accounts.set(accountId, { sock, isConnected: false, qr: null, user: null, sessionDir });
 
   sock.ev.on('connection.update', async (update) => {
@@ -188,7 +198,6 @@ async function connectAccount(accountId) {
       acc.qr = null;
       acc.user = sock.user;
       addLog('ok', `Account ${accountId}: connected as ${sock.user?.name || sock.user?.id}`);
-      // Resume running campaigns assigned to this account
       campaigns
         .filter(c => c.status === 'running' && c.accountId === accountId)
         .forEach(c => startCampaignLoop(c.id));
@@ -209,7 +218,6 @@ async function connectAccount(accountId) {
 
   sock.ev.on('creds.update', saveCreds);
 
-  // Log incoming messages
   sock.ev.on('messages.upsert', ({ messages: msgs, type }) => {
     if (type !== 'notify') return;
     msgs.forEach(msg => {
@@ -220,7 +228,6 @@ async function connectAccount(accountId) {
     });
   });
 
-  // Track delivery receipts — tells us if messages were actually delivered
   sock.ev.on('message-receipt.update', updates => {
     updates.forEach(({ key, receipt }) => {
       if (!key.fromMe) return;
@@ -248,16 +255,16 @@ async function connectAccount(accountId) {
 //  SEND ONE DM  (anti-ban wrapped)
 // ─────────────────────────────────────────
 async function sendDM(phone, name, camp) {
-  // Pick account
   const accountId = camp.accountId || 'main';
   const acc = accounts.get(accountId);
   if (!acc || !acc.isConnected) throw new Error(`Account ${accountId} not connected`);
   const sock = acc.sock;
 
-  const num = phone.replace(/[^0-9]/g, '');
+  // Auto-fix 10-digit Indian numbers
+  let num = phone.replace(/[^0-9]/g, '');
+  if (num.length === 10 && /^[6-9]/.test(num)) num = '91' + num;
   const jid = num + '@s.whatsapp.net';
 
-  // Check if on WhatsApp (with retry)
   try {
     const [result] = await sock.onWhatsApp(jid);
     if (!result?.exists) {
@@ -266,21 +273,17 @@ async function sendDM(phone, name, camp) {
     }
   } catch (e) {
     addLog('warn', `${phone} — existence check failed: ${e.message}`);
-    // Continue anyway — check can fail transiently
   }
 
-  // Build message with variable substitution
   let msg = (camp.msg || '')
     .replace(/\{\{name\}\}/gi, name || phone)
     .replace(/\{\{phone\}\}/gi, phone);
 
-  // AI rewrite every single message
   if (camp.groqKey) {
     msg = await rewriteMessage(msg, camp.groqKey, name);
     addLog('info', `AI rewrite ✓`);
   }
 
-  // Anti-ban: simulate typing presence
   const typingTime = humanDelay(CONFIG.MIN_TYPING, (CONFIG.MAX_TYPING - CONFIG.MIN_TYPING) / 2);
   await sock.sendPresenceUpdate('available', jid);
   await delay(400);
@@ -289,7 +292,6 @@ async function sendDM(phone, name, camp) {
   await sock.sendPresenceUpdate('paused', jid);
   await delay(300);
 
-  // Send
   if (camp.imgEnabled && camp.imgData) {
     const base64 = camp.imgData.split(',')[1];
     let imgBuffer = Buffer.from(base64, 'base64');
@@ -297,8 +299,6 @@ async function sendDM(phone, name, camp) {
     const mimeMatch = camp.imgData.match(/data:(image\/\w+);/);
     const mimetype = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
-    // Strategy: send greeting text FIRST (appears in notification preview),
-    // then image+caption after short gap — increases open rate from unknown senders
     if (camp.introText) {
       const intro = camp.introText
         .replace(/\{\{name\}\}/gi, name || phone)
@@ -335,8 +335,6 @@ async function startCampaignLoop(campaignId) {
   activeCampaigns.set(campaignId, state);
   addLog('info', `Campaign "${camp.name}" started`, campaignId);
 
-  // Get numbers for this campaign
-  // If camp.numberIds set, use those specific numbers; else use all pending
   let campNums;
   if (camp.numberIds && camp.numberIds.length) {
     campNums = numbers.filter(n => camp.numberIds.includes(n.phone));
@@ -386,14 +384,12 @@ async function startCampaignLoop(campaignId) {
       saveAll();
     }
 
-    // Anti-ban: break time
     if (state.dmCount > 0 && state.dmCount % (camp.breakAfter || 10) === 0) {
       const breakMs = (camp.breakDur || 120) * 1000;
       addLog('warn', `☕ Break: ${Math.round(breakMs/60000)}min...`, campaignId);
       await delay(breakMs);
       addLog('info', 'Resuming...', campaignId);
     } else {
-      // Anti-ban: human-like random delay
       const baseMs = (camp.delay || 20) * 1000;
       const jitterMs = baseMs * 0.4;
       const waitMs = humanDelay(baseMs, jitterMs);
@@ -423,6 +419,22 @@ const app = express();
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── UptimeRobot keep-alive endpoint ──────
+// Monitor this URL: https://your-app.onrender.com/healthz
+// Interval: every 5 minutes — keeps the free tier from sleeping
+app.get('/healthz', (req, res) => {
+  const mainAcc = accounts.get('main');
+  res.json({
+    ok: true,
+    ts: Date.now(),
+    uptime: Math.round(process.uptime()),
+    connected: mainAcc?.isConnected || false,
+    accounts: accounts.size,
+    activeCampaigns: activeCampaigns.size,
+    version: '5.1'
+  });
+});
 
 // ── Status ──
 app.get('/ping', (req, res) => {
@@ -455,8 +467,7 @@ app.get('/api/accounts', (req, res) => {
   const list = [...accounts.entries()].map(([id, acc]) => ({
     id, isConnected: acc.isConnected, user: acc.user, hasQR: !!acc.qr
   }));
-  // Also add saved account IDs from disk that aren't connected yet
-  const sessionDirs = fs.readdirSync('.').filter(f => f.startsWith('session_'));
+  const sessionDirs = fs.readdirSync(SESSION_BASE).filter(f => f.startsWith('session_'));
   sessionDirs.forEach(d => {
     const id = d.replace('session_', '');
     if (!accounts.has(id)) list.push({ id, isConnected: false, user: null, hasQR: false });
@@ -477,8 +488,7 @@ app.delete('/api/accounts/:id', (req, res) => {
   const acc = accounts.get(id);
   if (acc?.sock) try { acc.sock.end(); } catch {}
   accounts.delete(id);
-  // Delete session dir
-  const sessionDir = `./session_${id}`;
+  const sessionDir = path.join(SESSION_BASE, `session_${id}`);
   if (fs.existsSync(sessionDir)) fs.rmSync(sessionDir, { recursive: true });
   addLog('warn', `Account ${id} removed`);
   res.json({ ok: true });
@@ -542,7 +552,9 @@ app.post('/api/numbers', (req, res) => {
   const existing = new Set(numbers.map(n => n.phone));
   let added = 0;
   incoming.forEach(n => {
-    const phone = String(n.phone || '').replace(/[^0-9]/g, '');
+    let phone = String(n.phone || '').replace(/[^0-9]/g, '');
+    // Auto-fix 10-digit Indian numbers
+    if (phone.length === 10 && /^[6-9]/.test(phone)) phone = '91' + phone;
     if (phone.length >= 7 && !existing.has(phone)) {
       numbers.push({ phone, name: n.name || '', group: n.group || '', status: 'pending', addedAt: Date.now() });
       existing.add(phone); added++;
@@ -592,21 +604,26 @@ app.get('/api/groups', (req, res) => {
 });
 
 // ─────────────────────────────────────────
-//  START
+//  START SERVER
 // ─────────────────────────────────────────
-app.listen(CONFIG.PORT, () => {
-  console.log(`\n╔══════════════════════════════════════╗`);
-  console.log(`║   WAReach Bot v5.0 — Anti-Ban        ║`);
-  console.log(`╚══════════════════════════════════════╝`);
-  console.log(`  Dashboard: http://localhost:${CONFIG.PORT}`);
-  console.log(`  QR:        http://localhost:${CONFIG.PORT}/qr\n`);
+app.listen(CONFIG.PORT, '0.0.0.0', () => {
+  console.log(`\n╔══════════════════════════════════════════════╗`);
+  console.log(`║   WAReach Bot v5.1 — Render + UptimeRobot    ║`);
+  console.log(`╚══════════════════════════════════════════════╝`);
+  console.log(`  Dashboard:  http://localhost:${CONFIG.PORT}`);
+  console.log(`  QR:         http://localhost:${CONFIG.PORT}/qr`);
+  console.log(`  Health:     http://localhost:${CONFIG.PORT}/healthz`);
+  if (IS_RENDER) {
+    console.log(`  Mode:       Render (persistent disk at /data)`);
+    console.log(`  UptimeRobot: ping /healthz every 5 min`);
+  }
+  console.log('');
 });
 
 // Connect default "main" account + any saved sessions
 connectAccount('main');
-// Auto-reconnect any additional saved sessions
 setTimeout(() => {
-  const sessionDirs = fs.readdirSync('.').filter(f => f.startsWith('session_') && f !== 'session_main');
+  const sessionDirs = fs.readdirSync(SESSION_BASE).filter(f => f.startsWith('session_') && f !== 'session_main');
   sessionDirs.forEach(d => {
     const id = d.replace('session_', '');
     if (!accounts.has(id)) {
