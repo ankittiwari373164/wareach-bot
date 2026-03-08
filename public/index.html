@@ -964,7 +964,12 @@ function deleteCampaign(id) {
 // BACKEND API — replaces Tampermonkey script
 // ═══════════════════════════════════════
 function getBackend() {
-  return (document.getElementById('script-backend') || {}).value || 'http://localhost:3001';
+  const saved = (document.getElementById('script-backend') || {}).value;
+  if (saved && saved.trim()) return saved.trim();
+  // When dashboard is served by the bot itself (Render), use same origin
+  // Falls back to localhost only for local dev
+  const origin = window.location.origin;
+  return (origin && origin !== 'null' && !origin.startsWith('file:')) ? origin : 'http://localhost:3001';
 }
 function saveBackend() {
   settings.backendUrl = getBackend();
@@ -993,21 +998,26 @@ async function checkConnection() {
   el.textContent = 'Checking connection...';
   try {
     const data = await fetch(getBackend() + '/status', { cache: 'no-store' }).then(r => r.json());
-    if (data.connected) {
+    // /status returns { accounts: [{id, isConnected, user, hasQR}], activeCampaigns: [] }
+    const mainAcc = data.accounts?.find(a => a.id === 'main') || data.accounts?.[0];
+    const isConnected = mainAcc?.isConnected || data.connected;
+    if (isConnected) {
       el.className = 'status-msg status-ok';
-      el.textContent = `✓ Connected as: ${data.user?.name || data.user?.id || 'WhatsApp'}`;
+      el.textContent = `✓ Connected as: ${mainAcc?.user?.name || mainAcc?.user?.id || 'WhatsApp'}`;
       const ss = document.getElementById('ss-status');
       if (ss) { ss.textContent = '● online'; ss.style.color = 'var(--green)'; }
       const qrCard = document.getElementById('qr-card');
       if (qrCard) qrCard.style.display = 'none';
     } else {
       el.className = 'status-msg status-err';
-      el.textContent = '⚠ Bot running but WhatsApp disconnected — scan QR below';
+      el.textContent = '⚠ Bot running but WhatsApp not connected — scan QR below';
+      const ss = document.getElementById('ss-status');
+      if (ss) { ss.textContent = '● no WA'; ss.style.color = 'var(--warn)'; }
       refreshQR();
     }
   } catch(e) {
     el.className = 'status-msg status-err';
-    el.textContent = '✗ Bot offline — run: node bot.js';
+    el.textContent = '✗ Cannot reach bot server';
     const ss = document.getElementById('ss-status');
     if (ss) { ss.textContent = '● offline'; ss.style.color = 'var(--muted)'; }
   }
@@ -1016,34 +1026,61 @@ async function checkConnection() {
 async function refreshQR() {
   const data = await apiCall('GET', '/qr');
   const card = document.getElementById('qr-card');
-  if (!data.qr) {
-    if (data.msg) {
-      const el = document.getElementById('conn-status');
-      el.className = 'status-msg status-ok';
-      el.textContent = '✓ ' + data.msg;
-    }
+  if (!card) return;
+
+  if (data.connected) {
+    card.style.display = 'none';
+    const el = document.getElementById('conn-status');
+    if (el) { el.className = 'status-msg status-ok'; el.textContent = `✓ Connected as: ${data.user?.name || data.user?.id || 'WhatsApp'}`; }
     return;
   }
+
+  if (!data.qr) {
+    // No QR yet — keep polling
+    setTimeout(refreshQR, 3000);
+    return;
+  }
+
   card.style.display = 'block';
-  // Display QR as text (simple, no external lib needed)
+
+  // Render QR as scannable image using qrcode-generator (loaded inline)
+  const qrContainer = document.getElementById('qr-canvas');
+  if (!qrContainer) return;
+
+  // Use QRCode library from CDN — renders into a div as an <img>
+  if (!window._qrLibLoaded) {
+    window._qrLibLoaded = true;
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    script.onload = () => renderQRImage(data.qr, qrContainer);
+    document.head.appendChild(script);
+  } else if (window.QRCode) {
+    renderQRImage(data.qr, qrContainer);
+  }
+
   const txt = document.getElementById('qr-text');
-  txt.style.display = 'block';
-  txt.textContent = 'QR data received — check terminal for QR code, or use a QR generator with this data.';
-  // Try to show QR via canvas using a simple qr lib from CDN
+  if (txt) { txt.style.display = 'block'; txt.textContent = 'Scan this QR with WhatsApp → Settings → Linked Devices → Link a Device'; }
+
+  // Auto-refresh QR every 25s (QR expires in 60s)
+  setTimeout(refreshQR, 25000);
+}
+
+function renderQRImage(qrData, container) {
   try {
-    const canvas = document.getElementById('qr-canvas');
-    if (window.QRCode) {
-      QRCode.toCanvas(canvas, data.qr, { width: 220, margin: 2 }, () => {});
-    } else {
-      // Load qrcode.js dynamically
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
-      script.onload = () => {
-        new QRCode(canvas, { text: data.qr, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.L });
-      };
-      document.head.appendChild(script);
-    }
-  } catch(e) {}
+    container.innerHTML = '';
+    container.style.background = '#fff';
+    container.style.padding = '12px';
+    container.style.borderRadius = '8px';
+    container.style.display = 'inline-block';
+    new QRCode(container, {
+      text: qrData,
+      width: 220,
+      height: 220,
+      correctLevel: QRCode.CorrectLevel.L
+    });
+  } catch(e) {
+    container.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrData)}" width="220" height="220" style="border-radius:4px">`;
+  }
 }
 
 async function syncFromBackend() {
@@ -1130,15 +1167,17 @@ function populateScriptCamps() {}
 async function pollBackend() {
   const backend = getBackend();
   try {
-    const [statusRes, logsRes] = await Promise.all([
-      fetch(backend + '/ping').then(r => r.json()),
-      fetch(backend + '/api/logs?limit=50').then(r => r.json())
+    const [pingRes, logsRes] = await Promise.all([
+      fetch(backend + '/ping', { cache: 'no-store' }).then(r => r.json()),
+      fetch(backend + '/api/logs?limit=50', { cache: 'no-store' }).then(r => r.json())
     ]);
     const el = document.getElementById('ss-status');
-    if (statusRes.connected) {
+    // Server is reachable — show status based on WA connection
+    if (pingRes.connected) {
       if (el) { el.textContent = '● online'; el.style.color = 'var(--green)'; }
     } else {
-      if (el) { el.textContent = '● no WA'; el.style.color = 'var(--warn)'; }
+      // Server is up but WA not connected yet (need to scan QR)
+      if (el) { el.textContent = '● server up'; el.style.color = 'var(--warn)'; }
     }
     // Merge backend logs into local
     if (Array.isArray(logsRes) && logsRes.length) {
