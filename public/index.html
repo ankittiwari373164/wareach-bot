@@ -1586,9 +1586,21 @@ function editCampaign(id) {
 
 (function init() {
   try { settings = JSON.parse(localStorage.getItem('wa_settings') || '{}'); } catch(e) {}
-  if (settings.backendUrl) {
-    const el = document.getElementById('script-backend');
-    if (el) el.value = settings.backendUrl;
+
+  // Auto-detect backend URL: if served from a real host (Render), always use current origin.
+  // Only use saved/localhost value when running locally.
+  const currentOrigin = window.location.origin;
+  const isLocalhost = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1') || currentOrigin.startsWith('file:');
+  const el = document.getElementById('script-backend');
+  if (el) {
+    if (!isLocalhost) {
+      // On Render: always override with current origin, clear any stale localhost
+      el.value = currentOrigin;
+      settings.backendUrl = currentOrigin;
+      localStorage.setItem('wa_settings', JSON.stringify(settings));
+    } else {
+      el.value = settings.backendUrl || 'http://localhost:3001';
+    }
   }
   renderNumbers();
   renderNumberCheckboxes();
