@@ -293,7 +293,15 @@ async function rewriteMessage(text, groqKey) {
 async function connectAccount(accountId) {
   addLog('info', `Account ${accountId}: connecting...`);
 
-  const { state, saveCreds } = await useMongoAuthState(accountId);
+  let authState;
+  try {
+    authState = await useMongoAuthState(accountId);
+  } catch(e) {
+    addLog('warn', `Account ${accountId}: session load failed (${e.message}) — clearing and starting fresh`);
+    await db.collection('sessions').deleteMany({ accountId });
+    authState = await useMongoAuthState(accountId);
+  }
+  const { state, saveCreds } = authState;
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
@@ -562,6 +570,84 @@ app.get('/status', (req, res) => res.json({
 app.get('/qr', (req, res) => {
   const acc = accounts.get('main');
   res.json({ qr: acc?.qr || null, connected: acc?.isConnected || false, user: acc?.user || null });
+});
+
+// /reset-session — clears saved session so fresh QR is generated
+app.get('/reset-session', async (req, res) => {
+  const accountId = req.query.account || 'main';
+  try {
+    const acc = accounts.get(accountId);
+    if (acc?.sock) try { acc.sock.end(); } catch {}
+    accounts.delete(accountId);
+    await db.collection('sessions').deleteMany({ accountId });
+    addLog('warn', `Session reset for ${accountId} — reconnecting fresh`);
+    setTimeout(() => connectAccount(accountId), 1000);
+    res.send(`<html><body style="background:#0a0f0a;color:#25D366;font-family:sans-serif;padding:40px;text-align:center">
+      <h2>✓ Session cleared for "${accountId}"</h2>
+      <p style="color:#5a7a5a">New QR generating... wait 10 seconds then:</p>
+      <a href="/scan" style="color:#25D366;font-size:18px">→ Go to /scan to scan QR</a>
+    </body></html>`);
+  } catch(e) {
+    res.send('Error: ' + e.message);
+  }
+});
+
+// /scan — browser page that renders the QR as a scannable image
+app.get('/scan', (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="refresh" content="8">
+<title>WAReach QR</title>
+<style>
+  body{background:#0a0f0a;color:#e8f5e8;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;text-align:center}
+  h2{color:#25D366;margin-bottom:8px}
+  p{color:#5a7a5a;font-size:14px;margin-bottom:20px}
+  #qr{background:#fff;padding:16px;border-radius:12px;display:inline-block;min-width:100px;min-height:100px}
+  .ok{color:#25D366;font-size:18px;margin-top:16px}
+  .err{color:#ffaa00;font-size:14px;margin-top:16px}
+  small{color:#3a5a3a;font-size:12px;margin-top:12px;display:block}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+<h2>📱 WAReach — Scan to Connect</h2>
+<p>Scan with WhatsApp → Settings → Linked Devices → Link a Device</p>
+<div id="qr"></div>
+<div id="msg" class="err">Loading...</div>
+<small>Page auto-refreshes every 8 seconds</small>
+<script>
+async function load(){
+  try{
+    const r=await fetch('/qr');
+    const d=await r.json();
+    if(d.connected){
+      document.getElementById('qr').innerHTML='<div style="font-size:60px;padding:20px">✅</div>';
+      document.getElementById('msg').className='ok';
+      document.getElementById('msg').textContent='Connected as: '+(d.user?.name||d.user?.id||'WhatsApp');
+      return;
+    }
+    if(d.qr){
+      document.getElementById('qr').innerHTML='';
+      new QRCode(document.getElementById('qr'),{text:d.qr,width:256,height:256,correctLevel:QRCode.CorrectLevel.L});
+      document.getElementById('msg').className='ok';
+      document.getElementById('msg').textContent='Scan now — refreshes in 8s';
+    } else {
+      document.getElementById('msg').className='err';
+      document.getElementById('msg').textContent='Waiting for QR... retrying in 5s';
+      setTimeout(load,5000);
+    }
+  }catch(e){
+    document.getElementById('msg').textContent='Bot starting up... retrying';
+    setTimeout(load,5000);
+  }
+}
+load();
+</script>
+</body>
+</html>`);
 });
 
 app.get('/qr/:accountId', (req, res) => {
