@@ -439,6 +439,7 @@
         <textarea id="manual-numbers" placeholder="919876543210&#10;919123456789&#10;+91 98765 43210" style="height:120px"></textarea>
       </div>
       <button class="btn btn-secondary" onclick="addManualNumbers()">➕ Add Numbers</button>
+      <div id="num-manual-status" class="status-msg" style="display:none;margin-top:8px"></div>
     </div>
 
     <div class="card">
@@ -848,51 +849,34 @@ function clearNumbers() {
   updateSidebar();
 }
 
-function addManualNumbers() {
+async function addManualNumbers() {
   const text = document.getElementById('manual-numbers').value.trim();
   if (!text) return;
   const lines = text.split('\n').map(l => cleanPhone(l.trim())).filter(l => l.length >= 7);
-  const existing = new Set(numbers.map(n => n.phone));
-  let added = 0;
-  lines.forEach(phone => {
-    if (!existing.has(phone)) {
-      numbers.push({ phone, name: '', status: 'pending', addedAt: Date.now() });
-      existing.add(phone);
-      added++;
+  const payload = lines.map(phone => ({ phone, name: '', status: 'pending' }));
+  if (!payload.length) { showStatus('num-manual-status', '✗ No valid numbers found', false); return; }
+
+  // Push directly to bot (MongoDB) — visible from any browser
+  try {
+    const res = await apiCall('POST', '/api/numbers', payload);
+    if (res && !res.error) {
+      showStatus('num-manual-status', `✓ Added ${res.added} new numbers. Total: ${res.total}`, true);
+      document.getElementById('manual-numbers').value = '';
+      // Reload from bot so local state is fresh
+      await loadAllFromBot();
+    } else {
+      showStatus('num-manual-status', '✗ ' + (res?.error || 'Save failed'), false);
     }
-  });
-  document.getElementById('manual-numbers').value = '';
-  alert(`✓ Added ${added} numbers. Total: ${numbers.length}`);
+  } catch(e) {
+    showStatus('num-manual-status', '✗ ' + e.message, false);
+  }
   updateSidebar();
 }
 
 // ═══════════════════════════════════════
 // CAMPAIGNS
 // ═══════════════════════════════════════
-function createCampaign() {
-  const name = document.getElementById('camp-name').value.trim();
-  const msg = document.getElementById('camp-msg').value.trim();
-  const limit = parseInt(document.getElementById('camp-limit').value);
-  const delay = parseInt(document.getElementById('camp-delay').value);
-  const breakAfter = parseInt(document.getElementById('camp-break-after').value);
-  const breakDur = parseInt(document.getElementById('camp-break-dur').value);
-
-  if (!name || !msg) { showStatus('camp-status', 'Campaign name and message are required.', false); return; }
-
-  const camp = {
-    id: 'c_' + Date.now(),
-    name, msg, limit, delay, breakAfter, breakDur,
-    status: 'idle',
-    sent: 0, failed: 0,
-    createdAt: Date.now()
-  };
-  campaigns.push(camp);
-  renderCampaigns();
-  showStatus('camp-status', `✓ Campaign "${name}" created.`, true);
-  document.getElementById('camp-name').value = '';
-  document.getElementById('camp-msg').value = '';
-  populateScriptCamps();
-}
+// createCampaign defined below (async version)
 
 function renderCampaigns() {
   const el = document.getElementById('camp-list');
@@ -944,11 +928,12 @@ function stopCampaign(id) {
   addLog('warn', `Campaign "${camp.name}" stopped`);
 }
 
-function deleteCampaign(id) {
+async function deleteCampaign(id) {
   if (!confirm('Delete this campaign?')) return;
+  await apiCall('DELETE', '/api/campaigns/' + id).catch(() => {});
   campaigns = campaigns.filter(c => c.id !== id);
   renderCampaigns();
-  populateScriptCamps();
+  updateSidebar();
 }
 
 // ═══════════════════════════════════════
@@ -1483,54 +1468,64 @@ function refreshQR() { refreshQRFor('main'); }
 // ═══════════════════════════════════════
 // UPDATED createCampaign — saves image + groq + account + selected numbers
 // ═══════════════════════════════════════
-function createCampaign() {
+async function createCampaign() {
   const name = (document.getElementById('camp-name').value || '').trim();
-  const msg = (document.getElementById('camp-msg').value || '').trim();
-  if (!name) { alert('Enter a campaign name'); return; }
-  if (!msg) { alert('Enter a message template'); return; }
+  const msg  = (document.getElementById('camp-msg').value || '').trim();
+  if (!name) { showStatus('camp-status', '✗ Enter a campaign name', false); return; }
+  if (!msg)  { showStatus('camp-status', '✗ Enter a message template', false); return; }
 
   const selectedPhones = getSelectedPhones();
   const editId = document.getElementById('edit-camp-id').value;
 
   const campData = {
     id: editId || 'c_' + Date.now(),
-    name,
-    msg,
-    accountId: document.getElementById('camp-account').value || 'main',
-    groqKey: document.getElementById('camp-groq').value || '',
+    name, msg,
+    accountId: document.getElementById('camp-account')?.value || 'main',
+    groqKey:   document.getElementById('camp-groq')?.value || '',
     introText: (document.getElementById('camp-intro')?.value || '').trim(),
     imgEnabled: !!campImgData,
     imgData: campImgData || null,
     numberIds: selectedPhones,
-    delay: parseInt(document.getElementById('camp-delay').value) || 20,
-    limit: parseInt(document.getElementById('camp-limit').value) || 50,
-    breakAfter: parseInt(document.getElementById('camp-break-after').value) || 10,
-    breakDur: parseInt(document.getElementById('camp-break-dur').value) || 120,
-    status: 'idle', sent: 0, failed: 0, createdAt: Date.now()
+    delay:      parseInt(document.getElementById('camp-delay')?.value) || 20,
+    limit:      parseInt(document.getElementById('camp-limit')?.value) || 50,
+    breakAfter: parseInt(document.getElementById('camp-break-after')?.value) || 10,
+    breakDur:   parseInt(document.getElementById('camp-break-dur')?.value) || 120,
+    status: 'idle', sent: 0, failed: 0
   };
 
-  const existing = campaigns.find(c => c.id === campData.id);
-  if (existing) {
-    Object.assign(existing, campData);
-  } else {
-    campaigns.push(campData);
+  // Save directly to bot (MongoDB) — works in any browser
+  try {
+    const res = editId
+      ? await apiCall('PUT', '/api/campaigns/' + editId, campData)
+      : await apiCall('POST', '/api/campaigns', campData);
+    if (res && !res.error) {
+      showStatus('camp-status', `✓ Campaign "${name}" saved`, true);
+    } else {
+      showStatus('camp-status', '✗ Save failed: ' + (res?.error || 'unknown'), false);
+    }
+  } catch(e) {
+    showStatus('camp-status', '✗ ' + e.message, false);
   }
-  save();
+
+  // Update local memory
+  const existing = campaigns.find(c => c.id === campData.id);
+  if (existing) Object.assign(existing, campData);
+  else campaigns.push(campData);
+
   renderCampaigns();
   updateSidebar();
 
   // Reset form
   document.getElementById('camp-name').value = '';
   document.getElementById('camp-msg').value = '';
-  document.getElementById('camp-groq').value = '';
+  if (document.getElementById('camp-groq')) document.getElementById('camp-groq').value = '';
   if (document.getElementById('camp-intro')) document.getElementById('camp-intro').value = '';
   document.getElementById('edit-camp-id').value = '';
   document.getElementById('camp-form-title').textContent = 'Create Campaign';
-  document.getElementById('cancel-edit-btn').style.display = 'none';
+  const cancelBtn = document.getElementById('cancel-edit-btn');
+  if (cancelBtn) cancelBtn.style.display = 'none';
   clearImg();
   deselectAllNumbers();
-
-  addLog('ok', `Campaign "${name}" saved`);
 }
 
 function cancelEdit() {
