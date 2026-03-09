@@ -823,7 +823,7 @@ function cleanPhone(p) {
 function saveNumbers() {
   const preview = window._previewNumbers;
   if (!preview || !preview.length) {
-    alert('No numbers to save. Upload a file first.');
+    showStatus('num-status', '✗ No numbers to save. Upload a file first.', false); return;
     return;
   }
   // Merge with existing, skip duplicates
@@ -914,7 +914,7 @@ function renderCampaigns() {
 function startCampaign(id) {
   const camp = campaigns.find(c => c.id === id);
   if (!camp) return;
-  if (!numbers.filter(n => n.status === 'pending').length) { alert('No pending numbers. Upload numbers first.'); return; }
+  if (!numbers.filter(n => n.status === 'pending').length) { showStatus('camp-status', '✗ No pending numbers. Upload numbers first.', false); return; return; }
   camp.status = 'running';
   renderCampaigns();
   addLog('info', `Campaign "${camp.name}" started`);
@@ -960,7 +960,17 @@ async function apiCall(method, path, body) {
       headers: { 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined
     });
-    return await res.json();
+    const text = await res.text();
+    if (!text || !text.trim()) return { ok: true };
+    // Guard against HTML error pages (Render 404 etc)
+    if (text.trim().startsWith('<')) {
+      return { error: 'Server returned HTML (check backend URL). Status: ' + res.status };
+    }
+    try {
+      return JSON.parse(text);
+    } catch(e) {
+      return { error: 'Invalid JSON: ' + text.slice(0, 80) };
+    }
   } catch (e) {
     return { error: e.message };
   }
@@ -1120,7 +1130,7 @@ async function startCampaignAPI(id) {
 
   // Step 3: start — send full campaign in body so bot can auto-create if needed
   const res = await apiCall('POST', '/api/campaigns/' + id + '/start', camp);
-  if (res.error) { alert('Error: ' + res.error); return; }
+  if (res.error) { showStatus('camp-status', '✗ ' + res.error, false); return; return; }
 
   camp.status = 'running';
   save();
