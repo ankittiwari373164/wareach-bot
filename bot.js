@@ -293,12 +293,31 @@ async function connectAccount(accountId) {
       acc.isConnected = false;
       const code = lastDisconnect?.error?.output?.statusCode;
       addLog('warn', `Account ${accountId}: disconnected (code: ${code})`);
-      if (code !== DisconnectReason.loggedOut) {
-        setTimeout(() => connectAccount(accountId), 6000);
-      } else {
-        addLog('error', `Account ${accountId}: logged out — re-add the account`);
+
+      if (code === DisconnectReason.loggedOut) {
+        // Intentional logout — clear session, don't reconnect
+        addLog('error', `Account ${accountId}: logged out — scan QR again`);
         accounts.delete(accountId);
         await db.collection('sessions').deleteMany({ accountId });
+
+      } else if (code === 440) {
+        // 440 = Conflict — another device/session took over
+        // Wait longer before reconnecting to let the conflict resolve
+        addLog('warn', `Account ${accountId}: session conflict (440) — waiting 15s then reconnecting`);
+        addLog('warn', `If this keeps looping: on your phone → WhatsApp → Linked Devices → log out wareach-bot → re-scan QR`);
+        setTimeout(() => connectAccount(accountId), 15000);
+
+      } else if (code === 401) {
+        // 401 = Unauthorized — session expired, needs fresh QR
+        addLog('warn', `Account ${accountId}: session expired (401) — clearing session, re-scan QR`);
+        accounts.delete(accountId);
+        await db.collection('sessions').deleteMany({ accountId });
+        setTimeout(() => connectAccount(accountId), 3000);
+
+      } else {
+        // Other disconnect — standard 6s reconnect with jitter
+        const wait = 6000 + Math.floor(Math.random() * 4000);
+        setTimeout(() => connectAccount(accountId), wait);
       }
     }
   });
