@@ -692,17 +692,15 @@
 // STATE
 // ═══════════════════════════════════════
 let settings = JSON.parse(localStorage.getItem('wa_settings') || '{}');
-let numbers = JSON.parse(localStorage.getItem('wa_numbers') || '[]');
-let campaigns = JSON.parse(localStorage.getItem('wa_campaigns') || '[]');
-let logs = JSON.parse(localStorage.getItem('wa_logs') || '[]');
+let numbers = [];   // loaded from bot on startup
+let campaigns = []; // loaded from bot on startup
+let logs = [];      // loaded from bot on startup
 
 // ═══════════════════════════════════════
 // PERSISTENCE
 // ═══════════════════════════════════════
 function save() {
-  localStorage.setItem('wa_numbers', JSON.stringify(numbers));
-  localStorage.setItem('wa_campaigns', JSON.stringify(campaigns));
-  localStorage.setItem('wa_logs', JSON.stringify(logs.slice(0,200)));
+  // Only save settings locally — numbers/campaigns/logs live in MongoDB via bot
   localStorage.setItem('wa_settings', JSON.stringify(settings));
 }
 function showStatus(id, msg, ok) {
@@ -837,7 +835,6 @@ function saveNumbers() {
       added++;
     }
   });
-  localStorage.setItem('wa_numbers', JSON.stringify(numbers));
   showStatus('file-status', `✓ Saved ${added} new numbers. Total: ${numbers.length}`, true);
   updateSidebar();
 }
@@ -845,7 +842,6 @@ function saveNumbers() {
 function clearNumbers() {
   if (!confirm('Clear all numbers?')) return;
   numbers = [];
-  localStorage.setItem('wa_numbers', JSON.stringify(numbers));
   document.getElementById('numbers-preview').style.display = 'none';
   document.getElementById('num-count').textContent = '';
   window._previewNumbers = null;
@@ -865,7 +861,6 @@ function addManualNumbers() {
       added++;
     }
   });
-  localStorage.setItem('wa_numbers', JSON.stringify(numbers));
   document.getElementById('manual-numbers').value = '';
   alert(`✓ Added ${added} numbers. Total: ${numbers.length}`);
   updateSidebar();
@@ -892,7 +887,6 @@ function createCampaign() {
     createdAt: Date.now()
   };
   campaigns.push(camp);
-  localStorage.setItem('wa_campaigns', JSON.stringify(campaigns));
   renderCampaigns();
   showStatus('camp-status', `✓ Campaign "${name}" created.`, true);
   document.getElementById('camp-name').value = '';
@@ -938,7 +932,6 @@ function startCampaign(id) {
   if (!camp) return;
   if (!numbers.filter(n => n.status === 'pending').length) { alert('No pending numbers. Upload numbers first.'); return; }
   camp.status = 'running';
-  localStorage.setItem('wa_campaigns', JSON.stringify(campaigns));
   renderCampaigns();
   addLog('info', `Campaign "${camp.name}" started`);
 }
@@ -947,7 +940,6 @@ function stopCampaign(id) {
   const camp = campaigns.find(c => c.id === id);
   if (!camp) return;
   camp.status = 'idle';
-  localStorage.setItem('wa_campaigns', JSON.stringify(campaigns));
   renderCampaigns();
   addLog('warn', `Campaign "${camp.name}" stopped`);
 }
@@ -955,7 +947,6 @@ function stopCampaign(id) {
 function deleteCampaign(id) {
   if (!confirm('Delete this campaign?')) return;
   campaigns = campaigns.filter(c => c.id !== id);
-  localStorage.setItem('wa_campaigns', JSON.stringify(campaigns));
   renderCampaigns();
   populateScriptCamps();
 }
@@ -1587,14 +1578,12 @@ function editCampaign(id) {
 (function init() {
   try { settings = JSON.parse(localStorage.getItem('wa_settings') || '{}'); } catch(e) {}
 
-  // Auto-detect backend URL: if served from a real host (Render), always use current origin.
-  // Only use saved/localhost value when running locally.
+  // Auto-detect backend URL
   const currentOrigin = window.location.origin;
   const isLocalhost = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1') || currentOrigin.startsWith('file:');
   const el = document.getElementById('script-backend');
   if (el) {
     if (!isLocalhost) {
-      // On Render: always override with current origin, clear any stale localhost
       el.value = currentOrigin;
       settings.backendUrl = currentOrigin;
       localStorage.setItem('wa_settings', JSON.stringify(settings));
@@ -1602,16 +1591,49 @@ function editCampaign(id) {
       el.value = settings.backendUrl || 'http://localhost:3001';
     }
   }
+
+  // Render empty UI immediately
   renderNumbers();
   renderNumberCheckboxes();
   renderCampaigns();
   updateSidebar();
   updateDashLog();
+
+  // Load all live data from bot (MongoDB) — works in ANY browser
+  loadAllFromBot();
+
   pollBackend();
   setInterval(pollBackend, 5000);
+  // Full sync every 30s keeps all browsers in sync automatically
+  setInterval(loadAllFromBot, 30000);
   setTimeout(() => { checkConnection(); renderAccounts(); }, 1000);
   setInterval(renderAccounts, 8000);
 })();
+
+// Load campaigns + numbers + logs from the bot (source of truth = MongoDB)
+async function loadAllFromBot() {
+  const backend = getBackend();
+  try {
+    const [campsRes, numsRes, logsRes] = await Promise.all([
+      fetch(backend + '/api/campaigns', { cache: 'no-store' }).then(r => r.json()),
+      fetch(backend + '/api/numbers', { cache: 'no-store' }).then(r => r.json()),
+      fetch(backend + '/api/logs?limit=100', { cache: 'no-store' }).then(r => r.json()),
+    ]);
+    let changed = false;
+    if (Array.isArray(campsRes)) { campaigns = campsRes; changed = true; }
+    if (Array.isArray(numsRes))  { numbers = numsRes; changed = true; }
+    if (Array.isArray(logsRes))  { logs = logsRes; }
+    if (changed) {
+      renderCampaigns();
+      renderNumbers();
+      renderNumberCheckboxes();
+      updateSidebar();
+      updateDashLog();
+    }
+  } catch(e) {
+    // Bot unreachable — silently keep whatever is in memory
+  }
+}
 </script>
 </body>
 </html>
