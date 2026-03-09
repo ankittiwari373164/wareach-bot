@@ -172,15 +172,55 @@ async function loadFromMongo() {
 }
 
 async function saveAll() {
-  await Promise.all([
-    ...campaigns.map(c => upsert('campaigns', { id: c.id }, c)),
-    ...numbers.map(n => upsert('numbers', { phone: n.phone }, n)),
-    db.collection('meta').updateOne(
+  // Use bulkWrite for numbers — single DB round trip instead of 937 parallel ops
+  try {
+    if (numbers.length) {
+      const numOps = numbers.map(n => ({
+        updateOne: {
+          filter: { phone: n.phone },
+          update: { $set: { ...n, _updatedAt: new Date() } },
+          upsert: true
+        }
+      }));
+      // Process in batches of 100 to avoid memory spikes
+      for (let i = 0; i < numOps.length; i += 100) {
+        await db.collection('numbers').bulkWrite(numOps.slice(i, i + 100), { ordered: false });
+      }
+    }
+    // Campaigns are few, save normally
+    for (const c of campaigns) {
+      await upsert('campaigns', { id: c.id }, c);
+    }
+    await db.collection('meta').updateOne(
       { _id: 'stats' },
       { $set: { _id: 'stats', data: stats, _updatedAt: new Date() } },
       { upsert: true }
-    )
-  ]);
+    );
+  } catch(e) {
+    console.error('[WAReach] saveAll error:', e.message);
+  }
+}
+
+// Lightweight save — only update ONE number status (called per DM instead of saveAll)
+async function saveNumberStatus(phone, status) {
+  try {
+    await db.collection('numbers').updateOne({ phone }, { $set: { status, _updatedAt: new Date() } });
+  } catch(e) {}
+}
+
+// Lightweight save — only update campaign counters
+async function saveCampaignStats(camp) {
+  try {
+    await db.collection('campaigns').updateOne(
+      { id: camp.id },
+      { $set: { sent: camp.sent, failed: camp.failed, status: camp.status, _updatedAt: new Date() } }
+    );
+    await db.collection('meta').updateOne(
+      { _id: 'stats' },
+      { $set: { _id: 'stats', data: stats, _updatedAt: new Date() } },
+      { upsert: true }
+    );
+  } catch(e) {}
 }
 
 // ─────────────────────────────────────────
@@ -191,8 +231,10 @@ function addLog(level, msg, campaignId = null) {
   logs.unshift(entry);
   if (logs.length > 500) logs = logs.slice(0, 500);
   db?.collection('logs').insertOne({ ...entry }).catch(() => {});
-  // Prune logs older than 7 days async
-  db?.collection('logs').deleteMany({ createdAt: { $lt: new Date(Date.now() - 7 * 86400000) } }).catch(() => {});
+  // Prune logs only occasionally (every 100 entries) to avoid constant DB ops
+  if (logs.length % 100 === 0) {
+    db?.collection('logs').deleteMany({ createdAt: { $lt: new Date(Date.now() - 7 * 86400000) } }).catch(() => {});
+  }
   const icon = { info: 'ℹ', warn: '⚠', error: '✗', ok: '✓' }[level] || 'ℹ';
   console.log(`[WAReach] ${icon} ${campaignId ? '[' + campaignId + '] ' : ''}${msg}`);
 }
@@ -448,17 +490,20 @@ async function startCampaignLoop(campaignId) {
         camp.sent = (camp.sent || 0) + 1;
         state.sentToday++;
         state.dmCount++;
-        await saveAll();
+        // Lightweight saves — don't hammer MongoDB with all 937 numbers every DM
+        await saveNumberStatus(phone, 'sent');
+        await saveCampaignStats(camp);
       } else if (result === 'not_found') {
         const numObj = numbers.find(n => n.phone === phone);
         if (numObj) numObj.status = 'failed';
         camp.failed = (camp.failed || 0) + 1;
-        await saveAll();
+        await saveNumberStatus(phone, 'failed');
+        await saveCampaignStats(camp);
       }
     } catch (err) {
       addLog('error', `${phone} — ${err.message}`, campaignId);
       camp.failed = (camp.failed || 0) + 1;
-      await saveAll();
+      await saveCampaignStats(camp);
     }
 
     if (state.dmCount > 0 && state.dmCount % (camp.breakAfter || 10) === 0) {
@@ -664,6 +709,18 @@ app.get('/api/groups', (req, res) => {
 // ─────────────────────────────────────────
 //  BOOT
 // ─────────────────────────────────────────
+// ─────────────────────────────────────────
+//  CRASH PROTECTION — log instead of silent die
+// ─────────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('[WAReach] UNCAUGHT EXCEPTION:', err.message);
+  console.error(err.stack);
+  // Don't exit — let the process keep running
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[WAReach] UNHANDLED REJECTION:', reason?.message || reason);
+});
+
 async function boot() {
   console.log('\n╔══════════════════════════════════════════════╗');
   console.log('║   WAReach Bot v6.0 — Render Free + MongoDB   ║');
